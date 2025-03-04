@@ -1,0 +1,250 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Enterprise Financial Services Serverless Application Template
+  This template provides a starting point for building secure, compliant financial services applications on AWS.
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 1024
+    Tracing: Active
+    Environment:
+      Variables:
+        LOG_LEVEL: INFO
+        POWERTOOLS_SERVICE_NAME: FinancialServiceApp
+        POWERTOOLS_METRICS_NAMESPACE: FinancialServices
+    Tags:
+      Environment: !Ref Environment
+      Application: FinancialServiceApp
+      CostCenter: Finance-IT
+      DataClassification: Confidential
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - test
+      - stage
+      - prod
+    Description: Deployment environment
+
+Resources:
+  # API Gateway with WAF protection
+  FinancialServicesApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: !Ref Environment
+      TracingEnabled: true
+      MethodSettings:
+        - ResourcePath: '/*'
+          HttpMethod: '*'
+          LoggingLevel: INFO
+          DataTraceEnabled: true
+          MetricsEnabled: true
+      AccessLogSetting:
+        DestinationArn: !GetAtt AccessLogs.Arn
+        Format: '{"requestId":"$context.requestId", "ip":"$context.identity.sourceIp", "requestTime":"$context.requestTime", "httpMethod":"$context.httpMethod", "path":"$context.path", "status":"$context.status", "protocol":"$context.protocol", "responseLength":"$context.responseLength", "userAgent":"$context.identity.userAgent"}'
+      Auth:
+        DefaultAuthorizer: CognitoAuthorizer
+        Authorizers:
+          CognitoAuthorizer:
+            UserPoolArn: !GetAtt UserPool.Arn
+      EndpointConfiguration: 
+        Type: REGIONAL
+      
+  # Lambda Functions
+  TransactionProcessorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: FinancialServiceFunction/
+      Handler: com.enterprise.finance.TransactionProcessor::handleRequest
+      Runtime: java11
+      Architectures:
+        - x86_64
+      Environment:
+        Variables:
+          JAVA_TOOL_OPTIONS: -XX:+TieredCompilation -XX:TieredStopAtLevel=1
+          TRANSACTION_TABLE: !Ref TransactionTable
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TransactionTable
+        - CloudWatchPutMetricPolicy: {}
+        - XRayTracingPolicy: {}
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref FinancialServicesApi
+            Path: /transactions
+            Method: post
+      Tags:
+        Function: TransactionProcessor
+        
+  AccountLookupFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: FinancialServiceFunction/
+      Handler: com.enterprise.finance.AccountLookup::handleRequest
+      Runtime: java11
+      Architectures:
+        - x86_64
+      Environment:
+        Variables:
+          JAVA_TOOL_OPTIONS: -XX:+TieredCompilation -XX:TieredStopAtLevel=1
+          ACCOUNT_TABLE: !Ref AccountTable
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AccountTable
+        - CloudWatchPutMetricPolicy: {}
+        - XRayTracingPolicy: {}
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref FinancialServicesApi
+            Path: /accounts/{accountId}
+            Method: get
+      Tags:
+        Function: AccountLookup
+
+  # DynamoDB Tables with encryption and backup
+  TransactionTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${Environment}-Transactions
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: transactionId
+          AttributeType: S
+        - AttributeName: accountId
+          AttributeType: S
+        - AttributeName: transactionDate
+          AttributeType: S
+      KeySchema:
+        - AttributeName: transactionId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: AccountTransactions
+          KeySchema:
+            - AttributeName: accountId
+              KeyType: HASH
+            - AttributeName: transactionDate
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: FinancialServiceApp
+        - Key: DataClassification
+          Value: Confidential
+
+  AccountTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${Environment}-Accounts
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: accountId
+          AttributeType: S
+        - AttributeName: customerId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: accountId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: CustomerAccounts
+          KeySchema:
+            - AttributeName: customerId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: FinancialServiceApp
+        - Key: DataClassification
+          Value: Confidential
+
+  # CloudWatch Logs
+  AccessLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/apigateway/${Environment}-financial-services-api
+      RetentionInDays: 90
+
+  # Cognito User Pool for Authentication
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub ${Environment}-financial-services-users
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
+      AutoVerifiedAttributes:
+        - email
+      MfaConfiguration: 'ON'
+      UserPoolTags:
+        Environment: !Ref Environment
+        Application: FinancialServiceApp
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+          RequireUppercase: true
+          TemporaryPasswordValidityDays: 1
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Mutable: false
+          Required: true
+        - Name: name
+          AttributeDataType: String
+          Mutable: true
+          Required: true
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub ${Environment}-financial-services-app-client
+      UserPoolId: !Ref UserPool
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      PreventUserExistenceErrors: ENABLED
+      GenerateSecret: true
+
+Outputs:
+  FinancialServicesApiEndpoint:
+    Description: "API Gateway endpoint URL"
+    Value: !Sub "https://${FinancialServicesApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}/"
+  
+  TransactionProcessorFunction:
+    Description: "Transaction Processor Lambda Function ARN"
+    Value: !GetAtt TransactionProcessorFunction.Arn
+  
+  AccountLookupFunction:
+    Description: "Account Lookup Lambda Function ARN"
+    Value: !GetAtt AccountLookupFunction.Arn
+  
+  UserPoolId:
+    Description: "Cognito User Pool ID"
+    Value: !Ref UserPool
+  
+  UserPoolClientId:
+    Description: "Cognito User Pool Client ID"
+    Value: !Ref UserPoolClient

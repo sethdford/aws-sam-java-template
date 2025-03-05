@@ -2,9 +2,6 @@ package com.enterprise.finance.personalization.service;
 
 import java.io.IOException;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -16,6 +13,7 @@ import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.enterprise.finance.personalization.metrics.PersonalizationMetrics;
 import com.enterprise.finance.personalization.model.FinancialContext;
 import com.enterprise.finance.personalization.model.FinancialProduct;
 import com.enterprise.finance.personalization.model.UserBehavior;
@@ -32,6 +30,7 @@ public class NextBestActionService implements AutoCloseable {
     
     private final BedrockService bedrockService;
     private final MockOpenSearchService openSearchService;
+    private final PersonalizationMetrics metrics;
     
     /**
      * Enum representing different types of financial actions that can be recommended.
@@ -92,6 +91,12 @@ public class NextBestActionService implements AutoCloseable {
         public void setRelatedProducts(List<FinancialProduct> relatedProducts) { this.relatedProducts = relatedProducts; }
     }
     
+    // Personalization strategy constants
+    public static final String STRATEGY_BASELINE = "BASELINE";
+    public static final String STRATEGY_GOAL_PRIORITIZED = "GOAL_PRIORITIZED";
+    public static final String STRATEGY_BEHAVIOR_DRIVEN = "BEHAVIOR_DRIVEN";
+    public static final String STRATEGY_HYBRID = "HYBRID";
+    
     /**
      * Constructor for NextBestActionService.
      *
@@ -101,6 +106,7 @@ public class NextBestActionService implements AutoCloseable {
     public NextBestActionService(BedrockService bedrockService, MockOpenSearchService openSearchService) {
         this.bedrockService = bedrockService;
         this.openSearchService = openSearchService;
+        this.metrics = PersonalizationMetrics.getInstance();
         logger.info("NextBestActionService initialized");
     }
     
@@ -121,8 +127,31 @@ public class NextBestActionService implements AutoCloseable {
             List<UserBehavior> userBehaviors,
             FinancialContext financialContext,
             int maxRecommendations) {
+        return determineNextBestActions(userId, userPreferences, userBehaviors, financialContext, maxRecommendations, STRATEGY_BASELINE);
+    }
+    
+    /**
+     * Determines the next best actions for a user based on their preferences, behavior, and financial context,
+     * using a specific personalization strategy.
+     *
+     * @param userId The ID of the user
+     * @param userPreferences The user's preferences
+     * @param userBehaviors The user's recent behaviors
+     * @param financialContext The user's financial context
+     * @param maxRecommendations The maximum number of recommendations to return
+     * @param strategy The personalization strategy to use
+     * @return A list of recommended actions
+     */
+    @Tracing
+    public List<ActionRecommendation> determineNextBestActions(
+            String userId,
+            UserPreferences userPreferences,
+            List<UserBehavior> userBehaviors,
+            FinancialContext financialContext,
+            int maxRecommendations,
+            String strategy) {
         
-        logger.info("Determining next best actions for user: {}", userId);
+        logger.info("Determining next best actions for user: {} using strategy: {}", userId, strategy);
         
         try {
             // Build a text representation of the user profile for embedding
@@ -143,11 +172,21 @@ public class NextBestActionService implements AutoCloseable {
             // Find relevant products for each recommendation using embeddings
             enrichRecommendationsWithProducts(recommendations, userProfileEmbedding);
             
+            // Apply strategy-specific sorting and filtering
+            recommendations = applyPersonalizationStrategy(recommendations, userPreferences, userBehaviors, financialContext, strategy);
+            
             // Sort recommendations by confidence score and limit to max requested
-            return recommendations.stream()
+            List<ActionRecommendation> finalRecommendations = recommendations.stream()
                     .sorted(Comparator.comparingDouble(ActionRecommendation::getConfidenceScore).reversed())
                     .limit(maxRecommendations)
                     .collect(Collectors.toList());
+            
+            // Record metrics for each recommendation
+            for (ActionRecommendation recommendation : finalRecommendations) {
+                metrics.recordRecommendationMade(userId, recommendation, strategy);
+            }
+            
+            return finalRecommendations;
         } catch (IOException e) {
             logger.error("Error determining next best actions: {}", e.getMessage(), e);
             return Collections.emptyList();
@@ -429,6 +468,153 @@ public class NextBestActionService implements AutoCloseable {
                 logger.error("Error enriching recommendation with products: {}", e.getMessage(), e);
             }
         }
+    }
+    
+    /**
+     * Applies a specific personalization strategy to the recommendations.
+     *
+     * @param recommendations The initial recommendations
+     * @param userPreferences The user's preferences
+     * @param userBehaviors The user's recent behaviors
+     * @param financialContext The user's financial context
+     * @param strategy The personalization strategy to apply
+     * @return The adjusted recommendations
+     */
+    private List<ActionRecommendation> applyPersonalizationStrategy(
+            List<ActionRecommendation> recommendations,
+            UserPreferences userPreferences,
+            List<UserBehavior> userBehaviors,
+            FinancialContext financialContext,
+            String strategy) {
+        
+        if (recommendations.isEmpty()) {
+            return recommendations;
+        }
+        
+        // Create a copy of the recommendations to avoid modifying the original list
+        List<ActionRecommendation> adjustedRecommendations = new ArrayList<>(recommendations);
+        
+        switch (strategy) {
+            case STRATEGY_GOAL_PRIORITIZED:
+                // Prioritize recommendations that align with the user's financial goals
+                if (financialContext != null && financialContext.getGoals() != null && !financialContext.getGoals().isEmpty()) {
+                    // Extract goal types
+                    List<String> goalTypes = financialContext.getGoals().stream()
+                            .map(FinancialContext.FinancialGoal::getGoalType)
+                            .collect(Collectors.toList());
+                    
+                    // Boost confidence scores for recommendations that align with goals
+                    for (ActionRecommendation recommendation : adjustedRecommendations) {
+                        if (recommendation.getActionType() == ActionType.INVESTMENT_OPPORTUNITY && 
+                                goalTypes.contains("INVESTMENT")) {
+                            recommendation.setConfidenceScore(recommendation.getConfidenceScore() * 1.5);
+                        } else if (recommendation.getActionType() == ActionType.RETIREMENT_PLANNING && 
+                                goalTypes.contains("RETIREMENT")) {
+                            recommendation.setConfidenceScore(recommendation.getConfidenceScore() * 1.5);
+                        } else if (recommendation.getActionType() == ActionType.SAVINGS_RECOMMENDATION && 
+                                goalTypes.contains("SAVINGS")) {
+                            recommendation.setConfidenceScore(recommendation.getConfidenceScore() * 1.5);
+                        }
+                    }
+                }
+                break;
+                
+            case STRATEGY_BEHAVIOR_DRIVEN:
+                // Prioritize recommendations based on user behavior patterns
+                if (userBehaviors != null && !userBehaviors.isEmpty()) {
+                    // Count action types in user behaviors
+                    Map<String, Integer> actionTypeCounts = new HashMap<>();
+                    for (UserBehavior behavior : userBehaviors) {
+                        String actionType = behavior.getActionType();
+                        actionTypeCounts.put(actionType, actionTypeCounts.getOrDefault(actionType, 0) + 1);
+                    }
+                    
+                    // Boost confidence scores for recommendations that align with frequent behaviors
+                    for (ActionRecommendation recommendation : adjustedRecommendations) {
+                        String actionTypeStr = recommendation.getActionType().toString();
+                        if (actionTypeCounts.containsKey(actionTypeStr)) {
+                            int count = actionTypeCounts.get(actionTypeStr);
+                            double boost = 1.0 + (count / 10.0); // Boost based on frequency
+                            recommendation.setConfidenceScore(recommendation.getConfidenceScore() * boost);
+                        }
+                    }
+                }
+                break;
+                
+            case STRATEGY_HYBRID:
+                // Apply both goal and behavior strategies with balanced weights
+                adjustedRecommendations = applyPersonalizationStrategy(
+                        recommendations, userPreferences, userBehaviors, financialContext, STRATEGY_GOAL_PRIORITIZED);
+                adjustedRecommendations = applyPersonalizationStrategy(
+                        adjustedRecommendations, userPreferences, userBehaviors, financialContext, STRATEGY_BEHAVIOR_DRIVEN);
+                
+                // Normalize confidence scores
+                double maxScore = adjustedRecommendations.stream()
+                        .mapToDouble(ActionRecommendation::getConfidenceScore)
+                        .max()
+                        .orElse(1.0);
+                
+                for (ActionRecommendation recommendation : adjustedRecommendations) {
+                    recommendation.setConfidenceScore(recommendation.getConfidenceScore() / maxScore);
+                }
+                break;
+                
+            case STRATEGY_BASELINE:
+            default:
+                // No adjustments for baseline strategy
+                break;
+        }
+        
+        return adjustedRecommendations;
+    }
+    
+    /**
+     * Records that a user has accepted a recommendation.
+     *
+     * @param userId The ID of the user
+     * @param recommendation The recommendation that was accepted
+     * @param strategy The personalization strategy that was used
+     */
+    public void recordRecommendationAccepted(String userId, ActionRecommendation recommendation, String strategy) {
+        metrics.recordRecommendationAccepted(userId, recommendation, strategy);
+        logger.info("User {} accepted recommendation: {}", userId, recommendation.getActionType());
+    }
+    
+    /**
+     * Records the financial impact of a recommendation.
+     *
+     * @param userId The ID of the user
+     * @param recommendation The recommendation
+     * @param financialImpactDollars The financial impact in dollars
+     */
+    public void recordFinancialImpact(String userId, ActionRecommendation recommendation, BigDecimal financialImpactDollars) {
+        // Convert dollars to cents for storage
+        long impactCents = financialImpactDollars.multiply(new BigDecimal(100)).longValue();
+        metrics.recordFinancialImpact(userId, recommendation, impactCents);
+        logger.info("Recorded financial impact of ${} for user {} recommendation: {}", 
+                  financialImpactDollars, userId, recommendation.getActionType());
+    }
+    
+    /**
+     * Records user satisfaction with a recommendation.
+     *
+     * @param userId The ID of the user
+     * @param recommendation The recommendation
+     * @param satisfactionScore The satisfaction score (1-5)
+     */
+    public void recordUserSatisfaction(String userId, ActionRecommendation recommendation, int satisfactionScore) {
+        metrics.recordUserSatisfaction(userId, recommendation, satisfactionScore);
+        logger.info("User {} rated recommendation {} with score: {}", 
+                  userId, recommendation.getActionType(), satisfactionScore);
+    }
+    
+    /**
+     * Generates a metrics report for personalization effectiveness.
+     *
+     * @return A string containing the metrics report
+     */
+    public String generateMetricsReport() {
+        return metrics.generateMetricsReport();
     }
     
     @Override

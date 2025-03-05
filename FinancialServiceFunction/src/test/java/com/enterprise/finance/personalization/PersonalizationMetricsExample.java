@@ -5,7 +5,6 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
 import java.util.UUID;
@@ -152,7 +151,7 @@ public class PersonalizationMetricsExample {
         preferences.setRiskTolerance(random.nextInt(10) + 1);
         
         // Set random investment horizon (1-30 years)
-        preferences.setInvestmentHorizon(random.nextInt(30) + 1);
+        preferences.setInvestmentHorizon(String.valueOf(random.nextInt(30) + 1));
         
         // Set random preferred categories
         String[] possibleCategories = {"STOCKS", "BONDS", "MUTUAL_FUNDS", "ETFS", "REAL_ESTATE", "CRYPTO"};
@@ -290,10 +289,13 @@ public class PersonalizationMetricsExample {
             double progressPercentage = random.nextDouble() * 0.9;
             goal.setCurrentAmount(goal.getTargetAmount().multiply(new BigDecimal(progressPercentage)).setScale(2, BigDecimal.ROUND_HALF_UP));
             
-            // Set random dates
+            // Fix: Convert LocalDate to Instant for goal dates
             LocalDate now = LocalDate.now();
-            goal.setCreatedDate(now.minusDays(random.nextInt(365)));
-            goal.setTargetDate(now.plusYears(1 + random.nextInt(10)));
+            Instant createdDate = now.minusDays(random.nextInt(365)).atStartOfDay(ZoneId.systemDefault()).toInstant();
+            Instant targetDate = now.plusYears(1 + random.nextInt(10)).atStartOfDay(ZoneId.systemDefault()).toInstant();
+            
+            goal.setCreatedDate(createdDate);
+            goal.setTargetDate(targetDate);
             
             // Set priority
             goal.setPriority(String.valueOf(random.nextInt(3) + 1)); // 1-3 priority

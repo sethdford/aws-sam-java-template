@@ -1,153 +1,76 @@
-# Enterprise Financial Services Serverless Application Template
+# AWS SAM Java Personalization
 
-This project provides a secure, compliant, and scalable template for building financial services applications on AWS using serverless architecture. It follows industry best practices for security, compliance, and performance.
+This project demonstrates a financial services personalization platform using AWS Bedrock and OpenSearch. It provides personalized financial product recommendations based on user preferences, behaviors, and financial context.
 
-## Architecture
+## Project Structure
 
-![Architecture Diagram](docs/architecture.png)
+The project is organized as follows:
 
-This template implements a serverless architecture with the following components:
+- `FinancialServiceFunction/` - Contains the main Lambda function code
+  - `src/main/java/com/enterprise/finance/personalization/` - Main source code
+    - `model/` - Data models for financial products, user preferences, etc.
+    - `service/` - Services for recommendation, embedding generation, and search
+  - `src/test/java/` - Test code and examples
 
-- **API Gateway**: Secure API endpoints with WAF protection and Cognito authentication
-- **Lambda Functions**: Java-based serverless functions for business logic
-- **DynamoDB**: NoSQL database for storing financial data with encryption at rest
-- **Cognito**: User authentication and authorization with MFA
-- **CloudWatch**: Comprehensive logging, monitoring, and alerting
-- **X-Ray**: Distributed tracing for performance analysis
+## Key Components
 
-## Features
+- **NextBestActionService**: Determines the next best actions for users based on their profile and behavior
+- **BedrockService**: Generates embeddings for text using AWS Bedrock (currently mocked)
+- **OpenSearchService**: Searches for similar products using vector embeddings (with mock implementation)
 
-- **Security**: Implements financial industry security best practices
-  - Data encryption at rest and in transit
-  - Secure authentication with MFA
-  - Fine-grained IAM permissions
-  - Input validation and sanitization
-  - Audit logging
+## Running the Examples
 
-- **Compliance**: Designed with regulatory compliance in mind
-  - Audit trails for all operations
-  - Data retention policies
-  - Secure data handling
+The project includes two example applications:
 
-- **Scalability**: Automatically scales to handle varying workloads
-  - Serverless architecture
-  - Pay-per-use pricing model
-  - No infrastructure management
-
-- **Observability**: Comprehensive monitoring and logging
-  - Structured logging with correlation IDs
-  - Metrics for business and technical KPIs
-  - Distributed tracing
-  - Alerting capabilities
-
-## Getting Started
-
-### Prerequisites
-
-- AWS CLI installed and configured
-- AWS SAM CLI installed
-- Java 11 or later
-- Maven
-
-### Deployment
-
-1. Clone this repository:
+1. **NextBestActionSimpleExample**: A simple example showing how to use the NextBestActionService
    ```
-   git clone https://github.com/yourenterprise/aws-sam-financial-template.git
-   cd aws-sam-financial-template
+   mvn exec:java -Dexec.mainClass="com.enterprise.finance.personalization.NextBestActionSimpleExample"
    ```
 
-2. Build the application:
+2. **NextBestActionExamples**: More comprehensive examples with different user profiles
    ```
-   sam build
-   ```
-
-3. Deploy the application:
-   ```
-   sam deploy --guided
+   mvn test-compile exec:java -Dexec.classpathScope=test -Dexec.mainClass="com.enterprise.finance.personalization.NextBestActionExamples"
    ```
 
-4. Follow the prompts to configure your deployment:
-   - Stack Name: Your CloudFormation stack name
-   - AWS Region: Region to deploy to
-   - Environment: dev, test, stage, or prod
-   - Confirm changes before deployment: Yes
-   - Allow SAM CLI to create IAM roles: Yes
+## Recent Fixes
 
-### Testing
+The following issues were fixed in the codebase:
 
-After deployment, you can test the API endpoints:
+1. **MockOpenSearchService**:
+   - Fixed return type mismatches between `List<FinancialProduct>` and `List<Product>`
+   - Added a helper method to convert between product types
+   - Removed unnecessary `throws IOException` declarations
 
-1. Get the API Gateway endpoint URL from the CloudFormation outputs:
-   ```
-   aws cloudformation describe-stacks --stack-name <your-stack-name> --query "Stacks[0].Outputs[?OutputKey=='FinancialServicesApiEndpoint'].OutputValue" --output text
-   ```
+2. **OpenSearchService**:
+   - Added default endpoint handling when environment variables are not set
+   - Added a constructor that accepts an endpoint parameter
 
-2. Create a user in the Cognito User Pool and obtain authentication tokens.
+3. **BedrockService**:
+   - Added a `generateEmbeddings` method to handle multiple texts
 
-3. Test the account lookup endpoint:
-   ```
-   curl -H "Authorization: Bearer <your-token>" https://<api-id>.execute-api.<region>.amazonaws.com/<env>/accounts/<account-id>
-   ```
+4. **NextBestActionSimpleExample**:
+   - Fixed method calls to match the actual model classes
 
-4. Test the transaction processing endpoint:
-   ```
-   curl -X POST -H "Content-Type: application/json" -H "Authorization: Bearer <your-token>" -d '{"accountId":"ACCT123456","amount":100.00,"transactionType":"DEPOSIT","description":"Initial deposit"}' https://<api-id>.execute-api.<region>.amazonaws.com/<env>/transactions
-   ```
+## Dependencies
 
-## Customization
+The project uses the following key dependencies:
 
-This template is designed to be customized for your specific financial services use case:
+- AWS SDK for Java v2
+- AWS Bedrock Runtime
+- OpenSearch Client
+- AWS Lambda Powertools
+- Jackson for JSON processing
 
-1. Modify the data models in `FinancialServiceFunction/src/main/java/com/enterprise/finance/model/`
-2. Customize the business logic in the Lambda function handlers
-3. Add additional API endpoints in the SAM template
-4. Enhance security controls as needed for your specific compliance requirements
+## Building and Deploying
 
-## Security Considerations
+To build the project:
 
-This template implements security best practices, but you should review and enhance security controls based on your specific requirements:
-
-- Review IAM permissions and apply the principle of least privilege
-- Consider adding additional WAF rules for your specific threat model
-- Implement additional encryption for sensitive data fields
-- Consider adding VPC integration for enhanced network security
-- Implement additional authentication factors as needed
-
-## Compliance
-
-This template provides a starting point for building compliant financial applications, but you should review and enhance compliance controls based on your specific regulatory requirements:
-
-- PCI DSS: For payment card processing
-- SOX: For financial reporting
-- GDPR/CCPA: For personal data protection
-- Industry-specific regulations (e.g., FINRA, SEC)
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-```bash
-sam build
+```
+mvn clean package
 ```
 
-Deploy the application via the standard deploy mechanism.
+To deploy with AWS SAM:
 
-```bash
+```
 sam deploy --guided
 ```
-
-Test the application:
-
-```bash
-aws lambda invoke --function-name 01-maven-default /dev/stdout | cat
-```
-
-## Reference
-
-Please follow the [blog post]() for additional information.
-

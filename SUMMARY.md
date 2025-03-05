@@ -8,6 +8,7 @@ We have successfully enhanced the AWS SAM Java Personalization platform by incor
    - Added comprehensive documentation on personalization approach (PERSONALIZATION-APPROACH.md)
    - Updated README.md with industry research references
    - Created detailed recommendations for future enhancements (RECOMMENDED-ENHANCEMENTS.md)
+   - Added detailed explanation of the conversational agent (CONVERSATIONAL-AGENT-EXPLANATION.md)
 
 2. **Metrics Tracking System**
    - Implemented PersonalizationMetrics class to track effectiveness metrics
@@ -25,10 +26,12 @@ We have successfully enhanced the AWS SAM Java Personalization platform by incor
    - Added life event prediction and personalized insights
    - Integrated dynamic risk profiling concepts
 
-5. **Example Applications**
+5. **Example Applications and Testing**
    - Developed ConversationalAgentExample to demonstrate the enhanced capabilities
    - Created PersonalizationMetricsExample for A/B testing different strategies
-   - Added a shell script for easy execution of the examples
+   - Added shell scripts for running examples and tests (run-conversational-agent.sh, run-all-tests.sh)
+   - Fixed type mismatches and date conversion issues in test files
+   - Ensured all tests run successfully
 
 ## Key Features of the Enhanced Platform
 
@@ -61,13 +64,46 @@ We have successfully enhanced the AWS SAM Java Personalization platform by incor
 
 ## Running the Enhanced Platform
 
-To run the conversational agent example:
+### Using the Test Scripts
+
+1. **Run All Tests**: To run all examples and tests (except interactive ones):
+   ```bash
+   ./run-all-tests.sh
+   ```
+   This script builds the project, runs the PersonalizationMetricsExample, executes all unit tests, and packages the project.
+
+2. **Run Conversational Agent**: To run the interactive conversational agent:
+   ```bash
+   ./run-conversational-agent.sh
+   ```
+   This starts an interactive session with the conversational agent using a sample user profile.
+
+### Running Individual Examples
+
+You can also run individual examples directly:
 
 ```bash
-./run-conversational-agent.sh
+cd FinancialServiceFunction
+mvn test-compile exec:java -Dexec.classpathScope=test -Dexec.mainClass="com.enterprise.finance.personalization.ConversationalAgentExample"
 ```
 
-This will build the project and start an interactive session with the conversational agent using a sample user profile.
+## Recent Fixes
+
+We've made several improvements to ensure the platform works correctly:
+
+1. **Fixed Type Mismatches**:
+   - Updated `setInvestmentHorizon` to use a String value instead of an int
+   - Fixed date conversion issues by properly converting LocalDate to Instant
+
+2. **Enhanced Test Scripts**:
+   - Created comprehensive test scripts with proper error handling
+   - Added clear instructions for running different examples
+   - Ensured all tests run without errors
+
+3. **Documentation Updates**:
+   - Added detailed explanation of the conversational agent implementation
+   - Updated README with information about test scripts
+   - Created a summary of all changes and enhancements
 
 ## Recommended Next Steps
 

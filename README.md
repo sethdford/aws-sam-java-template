@@ -19,7 +19,7 @@ The project is organized as follows:
 - **BedrockService**: Generates embeddings for text using AWS Bedrock (currently mocked)
 - **OpenSearchService**: Searches for similar products using vector embeddings (with mock implementation)
 - **PersonalizationMetrics**: Tracks effectiveness metrics based on industry research
-- **PersonalizationConversationalAgent**: Interactive agent providing personalized financial advice
+- **PersonalizationConversationalAgent**: Provides an interactive conversational interface for personalized advice
 
 ## Industry Research on Personalization
 
@@ -36,31 +36,64 @@ This project implements personalization best practices by:
 - Accounting for financial context and life events
 - Using AI-driven similarity matching for recommendations
 - Measuring effectiveness through comprehensive metrics
-- Providing conversational interfaces for personalized advice
 
 ## Running the Examples
 
-The project includes several example applications:
+The project includes several example applications and test scripts:
+
+### Using the Test Scripts
+
+1. **Run All Tests**: To run all examples and tests (except interactive ones):
+   ```
+   ./run-all-tests.sh
+   ```
+   This script will:
+   - Build and compile the project
+   - Run the PersonalizationMetricsExample
+   - Run all unit tests
+   - Package the project
+
+2. **Run Conversational Agent**: To run the interactive conversational agent:
+   ```
+   ./run-conversational-agent.sh
+   ```
+   This script will start an interactive session with the conversational agent using a sample user profile.
+
+### Running Individual Examples
 
 1. **NextBestActionSimpleExample**: A simple example showing how to use the NextBestActionService
    ```
+   cd FinancialServiceFunction
    mvn exec:java -Dexec.mainClass="com.enterprise.finance.personalization.NextBestActionSimpleExample"
    ```
 
 2. **NextBestActionExamples**: More comprehensive examples with different user profiles
    ```
+   cd FinancialServiceFunction
    mvn test-compile exec:java -Dexec.classpathScope=test -Dexec.mainClass="com.enterprise.finance.personalization.NextBestActionExamples"
    ```
 
 3. **PersonalizationMetricsExample**: Demonstrates A/B testing of different personalization strategies
    ```
+   cd FinancialServiceFunction
    mvn test-compile exec:java -Dexec.classpathScope=test -Dexec.mainClass="com.enterprise.finance.personalization.PersonalizationMetricsExample"
    ```
 
-4. **ConversationalAgentExample**: Interactive example of the personalized financial advice agent
+4. **ConversationalAgentExample**: Interactive example of the conversational agent
    ```
+   cd FinancialServiceFunction
    mvn test-compile exec:java -Dexec.classpathScope=test -Dexec.mainClass="com.enterprise.finance.personalization.ConversationalAgentExample"
    ```
+
+## Documentation
+
+The project includes comprehensive documentation:
+
+- **README.md**: This file, providing an overview of the project
+- **PERSONALIZATION-APPROACH.md**: Details on the personalization approach and industry research
+- **RECOMMENDED-ENHANCEMENTS.md**: Recommended future enhancements for the platform
+- **CONVERSATIONAL-AGENT-EXPLANATION.md**: Detailed explanation of the conversational agent implementation
+- **SUMMARY.md**: Summary of the project's features and accomplishments
 
 ## Recent Fixes
 
@@ -80,6 +113,10 @@ The following issues were fixed in the codebase:
 
 4. **NextBestActionSimpleExample**:
    - Fixed method calls to match the actual model classes
+
+5. **Test Files**:
+   - Fixed type mismatches in PersonalizationMetricsExample
+   - Corrected date conversion issues in test data generation
 
 ## Dependencies
 
@@ -119,30 +156,3 @@ To measure the effectiveness of personalization, this project includes a compreh
    - Hybrid Approach: Combined strategy weighing all factors
 
 These metrics align with industry research showing that effective personalization can improve financial outcomes by helping users make better decisions aligned with their goals.
-
-## Conversational Agent
-
-The project includes a conversational agent that provides personalized financial advice through an interactive interface. The agent:
-
-- Analyzes user profiles, behaviors, and financial context
-- Provides personalized recommendations with behavioral nudges
-- Tracks user satisfaction and financial impact
-- Adjusts recommendations based on user feedback
-- Incorporates insights from Vanguard's "Value of Personalized Advice" research
-
-## Future Enhancements
-
-See the [CONVERSATIONAL-AGENT-ENHANCEMENTS.md](CONVERSATIONAL-AGENT-ENHANCEMENTS.md) document for a detailed roadmap of planned enhancements, including:
-
-1. **Natural Language Processing Integration**: Enabling more natural conversations
-2. **Behavioral Finance Integration**: Addressing cognitive biases in financial decisions
-3. **Life Event Prediction Engine**: Anticipating and planning for major life changes
-4. **Dynamic Risk Profiling**: Adjusting risk assessments based on market conditions and life stages
-5. **Multi-modal Interaction**: Supporting voice and visual interfaces
-6. **Personalized Financial Education**: Delivering targeted learning based on knowledge gaps
-7. **Social Proof and Community Insights**: Leveraging anonymized peer comparisons
-8. **Integration with Financial Institutions**: Enabling seamless implementation of advice
-9. **Emotional Intelligence**: Addressing the emotional aspects of financial decisions
-10. **Longitudinal Outcome Tracking**: Measuring long-term impact of personalized advice
-
-These enhancements aim to deliver the 3-4% improvement in financial outcomes demonstrated in Vanguard's research on personalized financial advice.

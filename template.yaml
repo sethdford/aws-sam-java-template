@@ -1,8 +1,8 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >
-  Enterprise Financial Services Serverless Application Template
-  This template provides a starting point for building secure, compliant financial services applications on AWS.
+  Enterprise Financial Services Personalization Platform
+  This template provides a personalization platform for large-scale financial services applications on AWS.
 
 Globals:
   Function:
@@ -12,11 +12,11 @@ Globals:
     Environment:
       Variables:
         LOG_LEVEL: INFO
-        POWERTOOLS_SERVICE_NAME: FinancialServiceApp
+        POWERTOOLS_SERVICE_NAME: FinancialPersonalizationApp
         POWERTOOLS_METRICS_NAMESPACE: FinancialServices
     Tags:
       Environment: !Ref Environment
-      Application: FinancialServiceApp
+      Application: FinancialPersonalizationApp
       CostCenter: Finance-IT
       DataClassification: Confidential
 
@@ -30,6 +30,26 @@ Parameters:
       - stage
       - prod
     Description: Deployment environment
+  
+  OpenSearchDomainName:
+    Type: String
+    Default: financial-personalization
+    Description: Name of the OpenSearch domain
+  
+  OpenSearchInstanceType:
+    Type: String
+    Default: t3.small.search
+    Description: Instance type for OpenSearch nodes
+  
+  OpenSearchInstanceCount:
+    Type: Number
+    Default: 2
+    Description: Number of OpenSearch instances
+  
+  DaxClusterName:
+    Type: String
+    Default: financial-personalization-dax
+    Description: Name of the DAX cluster
 
 Resources:
   # API Gateway with WAF protection
@@ -55,7 +75,7 @@ Resources:
       EndpointConfiguration: 
         Type: REGIONAL
       
-  # Lambda Functions
+  # Lambda Functions - Original Functions
   TransactionProcessorFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -68,9 +88,13 @@ Resources:
         Variables:
           JAVA_TOOL_OPTIONS: -XX:+TieredCompilation -XX:TieredStopAtLevel=1
           TRANSACTION_TABLE: !Ref TransactionTable
+          USER_PREFERENCES_TABLE: !Ref UserPreferencesTable
+          DAX_ENDPOINT: !GetAtt DaxCluster.ClusterDiscoveryEndpoint
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref TransactionTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UserPreferencesTable
         - CloudWatchPutMetricPolicy: {}
         - XRayTracingPolicy: {}
       Events:
@@ -95,6 +119,7 @@ Resources:
         Variables:
           JAVA_TOOL_OPTIONS: -XX:+TieredCompilation -XX:TieredStopAtLevel=1
           ACCOUNT_TABLE: !Ref AccountTable
+          DAX_ENDPOINT: !GetAtt DaxCluster.ClusterDiscoveryEndpoint
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref AccountTable
@@ -110,7 +135,172 @@ Resources:
       Tags:
         Function: AccountLookup
 
-  # DynamoDB Tables with encryption and backup
+  # New Lambda Functions for Personalization
+  PersonalizationRecommenderFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: FinancialServiceFunction/
+      Handler: com.enterprise.finance.personalization.PersonalizationRecommender::handleRequest
+      Runtime: java11
+      Architectures:
+        - x86_64
+      Environment:
+        Variables:
+          JAVA_TOOL_OPTIONS: -XX:+TieredCompilation -XX:TieredStopAtLevel=1
+          USER_PREFERENCES_TABLE: !Ref UserPreferencesTable
+          USER_BEHAVIOR_TABLE: !Ref UserBehaviorTable
+          PRODUCT_CATALOG_TABLE: !Ref ProductCatalogTable
+          OPENSEARCH_DOMAIN: !GetAtt OpenSearchDomain.DomainEndpoint
+          DAX_ENDPOINT: !GetAtt DaxCluster.ClusterDiscoveryEndpoint
+          BEDROCK_MODEL_ID: amazon.titan-embed-text-v1
+          AWS_REGION: !Ref "AWS::Region"
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UserPreferencesTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UserBehaviorTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ProductCatalogTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - es:ESHttpGet
+                - es:ESHttpPost
+                - es:ESHttpPut
+              Resource: !Sub "arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/${OpenSearchDomainName}/*"
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource: "*"
+        - CloudWatchPutMetricPolicy: {}
+        - XRayTracingPolicy: {}
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref FinancialServicesApi
+            Path: /recommendations/{customerId}
+            Method: get
+      Tags:
+        Function: PersonalizationRecommender
+
+  EmbeddingGeneratorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: FinancialServiceFunction/
+      Handler: com.enterprise.finance.personalization.EmbeddingGenerator::handleRequest
+      Runtime: java11
+      Architectures:
+        - x86_64
+      Environment:
+        Variables:
+          JAVA_TOOL_OPTIONS: -XX:+TieredCompilation -XX:TieredStopAtLevel=1
+          PRODUCT_CATALOG_TABLE: !Ref ProductCatalogTable
+          OPENSEARCH_DOMAIN: !GetAtt OpenSearchDomain.DomainEndpoint
+          BEDROCK_MODEL_ID: amazon.titan-embed-text-v1
+          AWS_REGION: !Ref "AWS::Region"
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ProductCatalogTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - es:ESHttpGet
+                - es:ESHttpPost
+                - es:ESHttpPut
+              Resource: !Sub "arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/${OpenSearchDomainName}/*"
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource: "*"
+        - CloudWatchPutMetricPolicy: {}
+        - XRayTracingPolicy: {}
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref FinancialServicesApi
+            Path: /embeddings
+            Method: post
+      Tags:
+        Function: EmbeddingGenerator
+
+  UserBehaviorTrackerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: FinancialServiceFunction/
+      Handler: com.enterprise.finance.personalization.UserBehaviorTracker::handleRequest
+      Runtime: java11
+      Architectures:
+        - x86_64
+      Environment:
+        Variables:
+          JAVA_TOOL_OPTIONS: -XX:+TieredCompilation -XX:TieredStopAtLevel=1
+          USER_BEHAVIOR_TABLE: !Ref UserBehaviorTable
+          DAX_ENDPOINT: !GetAtt DaxCluster.ClusterDiscoveryEndpoint
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UserBehaviorTable
+        - CloudWatchPutMetricPolicy: {}
+        - XRayTracingPolicy: {}
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref FinancialServicesApi
+            Path: /track
+            Method: post
+      Tags:
+        Function: UserBehaviorTracker
+
+  NextBestActionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: FinancialServiceFunction
+      Handler: com.enterprise.finance.personalization.NextBestActionHandler::handleRequest
+      Runtime: java11
+      Architectures:
+        - x86_64
+      MemorySize: 1024
+      Environment:
+        Variables:
+          JAVA_TOOL_OPTIONS: -XX:+TieredCompilation -XX:TieredStopAtLevel=1
+          USER_PREFERENCES_TABLE: !Ref UserPreferencesTable
+          USER_BEHAVIOR_TABLE: !Ref UserBehaviorTable
+          PRODUCT_CATALOG_TABLE: !Ref ProductCatalogTable
+          OPENSEARCH_DOMAIN: !GetAtt OpenSearchDomain.DomainEndpoint
+          DAX_ENDPOINT: !GetAtt DaxCluster.ClusterDiscoveryEndpoint
+          BEDROCK_MODEL_ID: "amazon.titan-embed-text-v1"
+          AWS_REGION: !Ref AWS::Region
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UserPreferencesTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UserBehaviorTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ProductCatalogTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - es:ESHttpGet
+                - es:ESHttpPost
+                - es:ESHttpPut
+              Resource: !Sub "arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/${OpenSearchDomainName}/*"
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource: "*"
+      Events:
+        GetNextBestAction:
+          Type: Api
+          Properties:
+            Path: /nextBestAction
+            Method: post
+
+  # DynamoDB Tables - Original Tables
   TransactionTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -143,7 +333,7 @@ Resources:
         - Key: Environment
           Value: !Ref Environment
         - Key: Application
-          Value: FinancialServiceApp
+          Value: FinancialPersonalizationApp
         - Key: DataClassification
           Value: Confidential
 
@@ -175,9 +365,308 @@ Resources:
         - Key: Environment
           Value: !Ref Environment
         - Key: Application
-          Value: FinancialServiceApp
+          Value: FinancialPersonalizationApp
         - Key: DataClassification
           Value: Confidential
+
+  # New DynamoDB Tables for Personalization
+  UserPreferencesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${Environment}-UserPreferences
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: FinancialPersonalizationApp
+        - Key: DataClassification
+          Value: Confidential
+
+  UserBehaviorTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${Environment}-UserBehavior
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: eventId
+          AttributeType: S
+        - AttributeName: eventTime
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: eventId
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: UserEventTimeIndex
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+            - AttributeName: eventTime
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: FinancialPersonalizationApp
+        - Key: DataClassification
+          Value: Confidential
+
+  ProductCatalogTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${Environment}-ProductCatalog
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: productId
+          AttributeType: S
+        - AttributeName: category
+          AttributeType: S
+      KeySchema:
+        - AttributeName: productId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: CategoryIndex
+          KeySchema:
+            - AttributeName: category
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: FinancialPersonalizationApp
+        - Key: DataClassification
+          Value: Confidential
+
+  # DynamoDB Accelerator (DAX) Cluster
+  DaxSubnetGroup:
+    Type: AWS::DAX::SubnetGroup
+    Properties:
+      SubnetGroupName: !Sub ${Environment}-dax-subnet-group
+      Description: Subnet group for DAX cluster
+      SubnetIds:
+        - !ImportValue PrivateSubnet1
+        - !ImportValue PrivateSubnet2
+        - !ImportValue PrivateSubnet3
+
+  DaxParameterGroup:
+    Type: AWS::DAX::ParameterGroup
+    Properties:
+      ParameterGroupName: !Sub ${Environment}-dax-parameter-group
+      Description: Parameter group for DAX cluster
+
+  DaxCluster:
+    Type: AWS::DAX::Cluster
+    Properties:
+      ClusterName: !Ref DaxClusterName
+      NodeType: dax.t3.small
+      ReplicationFactor: 3
+      IAMRoleARN: !GetAtt DaxServiceRole.Arn
+      ParameterGroupName: !Ref DaxParameterGroup
+      SubnetGroupName: !Ref DaxSubnetGroup
+      SecurityGroupIds:
+        - !ImportValue DaxSecurityGroup
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        Environment: !Ref Environment
+        Application: FinancialPersonalizationApp
+
+  DaxServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: dax.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess
+
+  # OpenSearch Domain
+  OpenSearchDomain:
+    Type: AWS::OpenSearchService::Domain
+    Properties:
+      DomainName: !Ref OpenSearchDomainName
+      EngineVersion: OpenSearch_2.5
+      ClusterConfig:
+        InstanceType: !Ref OpenSearchInstanceType
+        InstanceCount: !Ref OpenSearchInstanceCount
+        ZoneAwarenessEnabled: true
+        ZoneAwarenessConfig:
+          AvailabilityZoneCount: 2
+      EBSOptions:
+        EBSEnabled: true
+        VolumeType: gp3
+        VolumeSize: 100
+      EncryptionAtRestOptions:
+        Enabled: true
+      NodeToNodeEncryptionOptions:
+        Enabled: true
+      DomainEndpointOptions:
+        EnforceHTTPS: true
+      AdvancedSecurityOptions:
+        Enabled: true
+        InternalUserDatabaseEnabled: true
+        MasterUserOptions:
+          MasterUserName: !Sub '{{resolve:secretsmanager:${OpenSearchMasterUserSecret}:SecretString:username}}'
+          MasterUserPassword: !Sub '{{resolve:secretsmanager:${OpenSearchMasterUserSecret}:SecretString:password}}'
+      AccessPolicies:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: 'es:*'
+            Resource: !Sub 'arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/${OpenSearchDomainName}/*'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: FinancialPersonalizationApp
+
+  OpenSearchMasterUserSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub ${Environment}/opensearch/master-user
+      Description: OpenSearch master user credentials
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "admin"}'
+        GenerateStringKey: "password"
+        PasswordLength: 16
+        ExcludeCharacters: '"@/\'
+
+  # AWS Glue for ETL
+  GlueDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: !Sub ${Environment}_financial_personalization
+        Description: Database for financial personalization data
+
+  GluePersonalizationCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub ${Environment}-financial-personalization-crawler
+      Role: !GetAtt GlueServiceRole.Arn
+      DatabaseName: !Ref GlueDatabase
+      Targets:
+        DynamoDBTargets:
+          - Path: !Ref UserPreferencesTable
+          - Path: !Ref UserBehaviorTable
+          - Path: !Ref ProductCatalogTable
+      Schedule:
+        ScheduleExpression: cron(0 0 * * ? *)
+      Configuration: '{"Version":1.0,"CrawlerOutput":{"Partitions":{"AddOrUpdateBehavior":"InheritFromTable"},"Tables":{"AddOrUpdateBehavior":"MergeNewColumns"}}}'
+      Tags:
+        Environment: !Ref Environment
+        Application: FinancialPersonalizationApp
+
+  GlueETLJob:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: !Sub ${Environment}-financial-personalization-etl
+      Role: !GetAtt GlueServiceRole.Arn
+      Command:
+        Name: glueetl
+        ScriptLocation: !Sub s3://${GlueScriptsBucket}/etl/financial_personalization_etl.py
+      DefaultArguments:
+        "--job-language": "python"
+        "--enable-metrics": ""
+      ExecutionProperty:
+        MaxConcurrentRuns: 1
+      MaxRetries: 0
+      Timeout: 60
+      GlueVersion: "3.0"
+      Tags:
+        Environment: !Ref Environment
+        Application: FinancialPersonalizationApp
+
+  GlueServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: glue.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+      Policies:
+        - PolicyName: GlueS3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Sub arn:aws:s3:::${GlueScriptsBucket}/*
+        - PolicyName: GlueDynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:DescribeTable
+                  - dynamodb:Scan
+                  - dynamodb:GetItem
+                Resource:
+                  - !GetAtt UserPreferencesTable.Arn
+                  - !GetAtt UserBehaviorTable.Arn
+                  - !GetAtt ProductCatalogTable.Arn
+
+  GlueScriptsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${AWS::AccountId}-${Environment}-glue-scripts
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: FinancialPersonalizationApp
 
   # CloudWatch Logs
   AccessLogs:
@@ -198,7 +687,7 @@ Resources:
       MfaConfiguration: 'ON'
       UserPoolTags:
         Environment: !Ref Environment
-        Application: FinancialServiceApp
+        Application: FinancialPersonalizationApp
       Policies:
         PasswordPolicy:
           MinimumLength: 12
@@ -240,6 +729,26 @@ Outputs:
   AccountLookupFunction:
     Description: "Account Lookup Lambda Function ARN"
     Value: !GetAtt AccountLookupFunction.Arn
+  
+  PersonalizationRecommenderFunction:
+    Description: "Personalization Recommender Lambda Function ARN"
+    Value: !GetAtt PersonalizationRecommenderFunction.Arn
+  
+  EmbeddingGeneratorFunction:
+    Description: "Embedding Generator Lambda Function ARN"
+    Value: !GetAtt EmbeddingGeneratorFunction.Arn
+  
+  UserBehaviorTrackerFunction:
+    Description: "User Behavior Tracker Lambda Function ARN"
+    Value: !GetAtt UserBehaviorTrackerFunction.Arn
+  
+  OpenSearchDomainEndpoint:
+    Description: "OpenSearch Domain Endpoint"
+    Value: !GetAtt OpenSearchDomain.DomainEndpoint
+  
+  DaxClusterEndpoint:
+    Description: "DAX Cluster Endpoint"
+    Value: !GetAtt DaxCluster.ClusterDiscoveryEndpoint
   
   UserPoolId:
     Description: "Cognito User Pool ID"

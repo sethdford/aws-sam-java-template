@@ -1,0 +1,4 @@
+warning: Supported source version 'RELEASE_6' from annotation processor 'org.eclipse.sisu.scanners.index.SisuIndexAPT6' less than -source '17'
+error: Bad service configuration file, or exception thrown while constructing Processor object: Invalid signature file digest for Manifest main attributes
+1 error
+1 warning

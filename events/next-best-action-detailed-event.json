@@ -1,0 +1,44 @@
+{
+  "body": "{\"userId\":\"user123\",\"maxRecommendations\":5,\"financialContext\":{\"userId\":\"user123\",\"monthlyIncome\":7500.00,\"totalSavings\":15000.00,\"totalDebt\":45000.00,\"creditScore\":680,\"monthlyExpenses\":5000.00,\"disposableIncome\":2500.00,\"savingsRate\":0.10,\"debtToIncomeRatio\":0.50,\"accounts\":[{\"accountId\":\"ACC-1001\",\"accountType\":\"CHECKING\",\"accountName\":\"Primary Checking\",\"balance\":3500.00},{\"accountId\":\"ACC-1002\",\"accountType\":\"SAVINGS\",\"accountName\":\"Emergency Fund\",\"balance\":11500.00,\"interestRate\":0.01},{\"accountId\":\"ACC-1003\",\"accountType\":\"CREDIT\",\"accountName\":\"Credit Card\",\"balance\":5000.00,\"interestRate\":0.1899}],\"goals\":[{\"goalId\":\"GOAL-1001\",\"goalType\":\"EMERGENCY_FUND\",\"description\":\"Build emergency fund\",\"targetAmount\":20000.00,\"currentAmount\":11500.00},{\"goalId\":\"GOAL-1002\",\"goalType\":\"DEBT_PAYOFF\",\"description\":\"Pay off credit card\",\"targetAmount\":5000.00,\"currentAmount\":0.00}]},\"userPreferences\":{\"userId\":\"user123\",\"riskTolerance\":3,\"investmentHorizon\":\"MEDIUM_TERM\",\"preferredCategories\":[\"SAVINGS\",\"INVESTMENT\",\"DEBT_MANAGEMENT\"],\"categoryPreferences\":{\"SAVINGS\":5,\"INVESTMENT\":4,\"DEBT_MANAGEMENT\":3}},\"userBehaviors\":[{\"userId\":\"user123\",\"behaviorId\":\"VIEW_SAVINGS_ACCOUNT_1678901234\",\"actionType\":\"VIEW\",\"resourceType\":\"SAVINGS\",\"resourceId\":\"SAVINGS_ACCOUNT\"},{\"userId\":\"user123\",\"behaviorId\":\"CLICK_DEBT_CONSOLIDATION_1678902345\",\"actionType\":\"CLICK\",\"resourceType\":\"DEBT_MANAGEMENT\",\"resourceId\":\"DEBT_CONSOLIDATION\"},{\"userId\":\"user123\",\"behaviorId\":\"VIEW_INVESTMENT_FUND_1678903456\",\"actionType\":\"VIEW\",\"resourceType\":\"INVESTMENT\",\"resourceId\":\"INVESTMENT_FUND\"}]}",
+  "resource": "/nextBestAction",
+  "path": "/nextBestAction",
+  "httpMethod": "POST",
+  "isBase64Encoded": false,
+  "headers": {
+    "Content-Type": "application/json",
+    "Accept": "application/json"
+  },
+  "queryStringParameters": null,
+  "pathParameters": null,
+  "stageVariables": null,
+  "requestContext": {
+    "resourceId": "123456",
+    "resourcePath": "/nextBestAction",
+    "httpMethod": "POST",
+    "extendedRequestId": "example-id",
+    "requestTime": "09/Apr/2023:12:34:56 +0000",
+    "path": "/nextBestAction",
+    "accountId": "123456789012",
+    "protocol": "HTTP/1.1",
+    "stage": "dev",
+    "domainPrefix": "testPrefix",
+    "requestTimeEpoch": 1617971696000,
+    "requestId": "c6af9ac6-7b61-11e6-9a41-93e8deadbeef",
+    "identity": {
+      "cognitoIdentityPoolId": null,
+      "accountId": null,
+      "cognitoIdentityId": null,
+      "caller": null,
+      "sourceIp": "127.0.0.1",
+      "principalOrgId": null,
+      "accessKey": null,
+      "cognitoAuthenticationType": null,
+      "cognitoAuthenticationProvider": null,
+      "userArn": null,
+      "userAgent": "Custom User Agent String",
+      "user": null
+    },
+    "domainName": "testPrefix.testDomainName",
+    "apiId": "api-id"
+  }
+} 
